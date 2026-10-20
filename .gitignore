@@ -1,0 +1,4 @@
+/pingr
+*.out
+.idea/
+.vscode/
