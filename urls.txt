@@ -1,0 +1,6 @@
+# one per line, https:// is added if there's no scheme
+go.dev
+github.com
+https://httpbin.org/status/503
+https://httpbin.org/delay/1
+https://this-domain-does-not-exist-123.com
