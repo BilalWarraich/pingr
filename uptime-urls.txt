@@ -1,0 +1,8 @@
+# urls checked by .github/workflows/uptime.yml every 30 min
+#
+# DON'T put apps on free tiers that sleep when idle (render, koyeb...) in here,
+# pinging them every 30 min keeps them awake and burns the free hours.
+go.dev
+pkg.go.dev
+proxy.golang.org
+https://github.com/BilalWarraich

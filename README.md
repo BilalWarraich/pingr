@@ -61,6 +61,15 @@ docker build -t pingr .
 docker run -p 9100:9100 pingr
 ```
 
+## Free uptime checks with GitHub Actions
+
+`.github/workflows/uptime.yml` runs pingr every 30 minutes against `uptime-urls.txt`.
+If anything is down the run fails (and GitHub emails you), and the results table shows up
+in the run summary. Free for public repos, nothing to host.
+
+Note: github pauses scheduled workflows after 60 days with no commits in the repo,
+you can re-enable it from the Actions tab.
+
 ## Tests
 
 ```
