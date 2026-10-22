@@ -63,7 +63,10 @@ func main() {
 		// stream json lines as results come in
 		enc := json.NewEncoder(os.Stdout)
 		for r := range c.Stream(ctx, urls) {
-			enc.Encode(r)
+			if err := enc.Encode(r); err != nil {
+				// stdout went away (e.g. piped into head), no point continuing
+				log.Fatal(err)
+			}
 		}
 		return
 	}

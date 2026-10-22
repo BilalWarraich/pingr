@@ -1,5 +1,7 @@
 # pingr
 
+[![ci](https://github.com/BilalWarraich/pingr/actions/workflows/ci.yml/badge.svg)](https://github.com/BilalWarraich/pingr/actions/workflows/ci.yml)
+
 Checks a list of urls concurrently and tells you which ones are down.
 Started as a weekend thing to check my own side projects, ended up being a nice
 excuse to try out a few concurrency patterns in Go.

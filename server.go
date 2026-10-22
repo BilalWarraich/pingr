@@ -52,7 +52,9 @@ func (s *status) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.results)
+	if err := json.NewEncoder(w).Encode(s.results); err != nil {
+		log.Printf("status: %v", err)
+	}
 }
 
 func runServer(ctx context.Context, addr string, interval time.Duration, c *check.Checker, urls []string) error {
