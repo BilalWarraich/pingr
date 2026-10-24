@@ -56,3 +56,13 @@ func TestWaitRate(t *testing.T) {
 		t.Fatalf("too fast: %v", el)
 	}
 }
+
+func TestFractionalRateDoesNotHang(t *testing.T) {
+	b := New(0.5, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := b.Wait(ctx); err != nil {
+		t.Fatalf("first Wait should get a token right away, got %v", err)
+	}
+}

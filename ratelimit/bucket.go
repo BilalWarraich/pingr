@@ -19,6 +19,11 @@ type Bucket struct {
 
 // New returns a bucket that allows `rate` events per second with bursts up to `burst`.
 func New(rate float64, burst int) *Bucket {
+	// a bucket that can't hold a single token never lets anything through,
+	// Wait would just sleep forever (happened with -rps 0.5 -> burst 0)
+	if burst < 1 {
+		burst = 1
+	}
 	return &Bucket{
 		tokens:  float64(burst),
 		max:     float64(burst),
