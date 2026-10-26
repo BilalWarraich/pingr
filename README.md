@@ -54,6 +54,9 @@ curl localhost:9100/metrics | grep pingr_
 curl localhost:9100/status
 ```
 
+Set `SLACK_WEBHOOK_URL` to get a slack message when a url goes down or comes back up.
+It only fires on changes, so a site that's down for an hour gives you one message, not 120.
+
 Metrics: `pingr_up{url}`, `pingr_latency_seconds{url}`, `pingr_checks_total{url,result}`
 
 Or with docker:
@@ -80,6 +83,5 @@ go test -race ./...
 
 ## Ideas / todo
 
-- alerting (slack webhook?) when something flips from up to down
 - per-url config (expected status, body contains, custom interval)
 - TLS cert expiry check

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/BilalWarraich/pingr/alert"
 	"github.com/BilalWarraich/pingr/check"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -57,7 +58,7 @@ func (s *status) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func runServer(ctx context.Context, addr string, interval time.Duration, c *check.Checker, urls []string) error {
+func runServer(ctx context.Context, addr string, interval time.Duration, c *check.Checker, urls []string, notifier alert.Notifier) error {
 	st := &status{results: map[string]check.Result{}}
 
 	mux := http.NewServeMux()
@@ -76,10 +77,23 @@ func runServer(ctx context.Context, addr string, interval time.Duration, c *chec
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	tracker := alert.NewTracker()
 	runOnce := func() {
 		for r := range c.Stream(ctx, urls) {
 			st.set(r)
 			record(r)
+			if notifier != nil {
+				if msg, ok := tracker.Changed(r); ok {
+					// don't hold up the checks waiting on slack
+					go func() {
+						nctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
+						if err := notifier.Notify(nctx, msg); err != nil {
+							log.Printf("alert failed: %v", err)
+						}
+					}()
+				}
+			}
 		}
 	}
 	runOnce()

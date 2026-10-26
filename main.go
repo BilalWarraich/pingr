@@ -15,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/BilalWarraich/pingr/alert"
 	"github.com/BilalWarraich/pingr/check"
 	"github.com/BilalWarraich/pingr/ratelimit"
 )
@@ -53,7 +54,12 @@ func main() {
 	defer stop()
 
 	if *serve != "" {
-		if err := runServer(ctx, *serve, *interval, c, urls); err != nil {
+		var notifier alert.Notifier
+		if hook := os.Getenv("SLACK_WEBHOOK_URL"); hook != "" {
+			notifier = &alert.Slack{WebhookURL: hook}
+			log.Println("slack alerts on")
+		}
+		if err := runServer(ctx, *serve, *interval, c, urls, notifier); err != nil {
 			log.Fatal(err)
 		}
 		return
