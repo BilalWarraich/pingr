@@ -27,6 +27,11 @@ var (
 		Buckets: prometheus.DefBuckets,
 	}, []string{"url"})
 
+	certExpiryDays = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "pingr_cert_expiry_days",
+		Help: "days until the tls cert expires (https urls only)",
+	}, []string{"url"})
+
 	checksTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "pingr_checks_total",
 		Help: "checks done, by result",
@@ -34,7 +39,7 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(upGauge, latencyHist, checksTotal)
+	prometheus.MustRegister(upGauge, latencyHist, checksTotal, certExpiryDays)
 }
 
 // status holds the latest result per url for the /status endpoint
@@ -125,6 +130,10 @@ func record(r check.Result) {
 	}
 	upGauge.WithLabelValues(r.URL).Set(up)
 	checksTotal.WithLabelValues(r.URL, res).Inc()
+	if r.CertExpiry != nil {
+		// float days so a dashboard can show "3.5 days" instead of rounding to 3
+		certExpiryDays.WithLabelValues(r.URL).Set(time.Until(*r.CertExpiry).Hours() / 24)
+	}
 	if r.Status != 0 {
 		latencyHist.WithLabelValues(r.URL).Observe(r.Latency.Seconds())
 	}

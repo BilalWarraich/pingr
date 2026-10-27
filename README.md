@@ -23,15 +23,15 @@ go build -o pingr .
 ```
 
 ```
-STATUS  CODE  LATENCY  TRIES  URL                                         ERROR
-UP      200   156ms    1      https://go.dev
-UP      200   212ms    1      https://github.com
-DOWN    503   402ms    3      https://httpbin.org/status/503              got 503
-UP      200   1.31s    1      https://httpbin.org/delay/1
-DOWN    -     3ms      3      https://this-domain-does-not-exist-123.com  dial tcp: lookup ...
+STATUS  CODE  LATENCY  TRIES  CERT  URL                                         ERROR
+UP      200   156ms    1      61d   https://go.dev
+UP      200   212ms    1      118d  https://github.com
+DOWN    503   402ms    3      74d   https://httpbin.org/status/503              got 503
+UP      200   1.31s    1      74d   https://httpbin.org/delay/1
+DOWN    -     3ms      3      -     https://this-domain-does-not-exist-123.com  dial tcp: lookup ...
 ```
 
-Exit code is 1 if anything is down, so it works in a cron job / CI step.
+CERT is days until the TLS cert expires. Exit code is 1 if anything is down or a cert expires within `-cert-warn` days, so it works in a cron job / CI step.
 
 Flags:
 
@@ -44,6 +44,7 @@ Flags:
 -json      print json lines as results come in
 -serve     run forever, expose /metrics and /status on this addr
 -interval  check interval in serve mode (30s)
+-cert-warn warn and exit 1 if a tls cert expires within N days (14)
 ```
 
 ### Serve mode
@@ -57,7 +58,7 @@ curl localhost:9100/status
 Set `SLACK_WEBHOOK_URL` to get a slack message when a url goes down or comes back up.
 It only fires on changes, so a site that's down for an hour gives you one message, not 120.
 
-Metrics: `pingr_up{url}`, `pingr_latency_seconds{url}`, `pingr_checks_total{url,result}`
+Metrics: `pingr_up{url}`, `pingr_latency_seconds{url}`, `pingr_checks_total{url,result}`, `pingr_cert_expiry_days{url}`
 
 Or with docker:
 
@@ -84,4 +85,3 @@ go test -race ./...
 ## Ideas / todo
 
 - per-url config (expected status, body contains, custom interval)
-- TLS cert expiry check

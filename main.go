@@ -30,6 +30,7 @@ func main() {
 		jsonOut     = flag.Bool("json", false, "print results as json")
 		serve       = flag.String("serve", "", "run forever and expose /metrics on this addr, e.g. :9100")
 		interval    = flag.Duration("interval", 30*time.Second, "how often to check in -serve mode")
+		certWarn    = flag.Int("cert-warn", 14, "warn (and exit 1) if a tls cert expires within this many days")
 	)
 	flag.Parse()
 
@@ -85,10 +86,18 @@ func main() {
 	printTable(results)
 	fmt.Printf("\nchecked %d urls in %v\n", len(urls), time.Since(start).Round(time.Millisecond))
 
+	failed := false
 	for _, r := range results {
 		if !r.Up {
-			os.Exit(1)
+			failed = true
 		}
+		if days, ok := r.CertDaysLeft(); ok && days < *certWarn {
+			fmt.Printf("WARN: cert for %s expires in %d days\n", r.URL, days)
+			failed = true
+		}
+	}
+	if failed {
+		os.Exit(1)
 	}
 }
 
@@ -116,7 +125,7 @@ func readURLs(path string) ([]string, error) {
 
 func printTable(results []check.Result) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "STATUS\tCODE\tLATENCY\tTRIES\tURL\tERROR")
+	fmt.Fprintln(w, "STATUS\tCODE\tLATENCY\tTRIES\tCERT\tURL\tERROR")
 	for _, r := range results {
 		st := "UP"
 		if !r.Up {
@@ -126,7 +135,11 @@ func printTable(results []check.Result) {
 		if r.Status != 0 {
 			code = fmt.Sprint(r.Status)
 		}
-		fmt.Fprintf(w, "%s\t%s\t%v\t%d\t%s\t%s\n", st, code, r.Latency.Round(time.Millisecond), r.Attempts, r.URL, r.Err)
+		cert := "-"
+		if days, ok := r.CertDaysLeft(); ok {
+			cert = fmt.Sprintf("%dd", days)
+		}
+		fmt.Fprintf(w, "%s\t%s\t%v\t%d\t%s\t%s\t%s\n", st, code, r.Latency.Round(time.Millisecond), r.Attempts, cert, r.URL, r.Err)
 	}
 	w.Flush()
 }

@@ -91,3 +91,33 @@ func TestStream(t *testing.T) {
 		t.Fatalf("got %d results", count)
 	}
 }
+
+func TestCertExpiry(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	// srv.Client() trusts the test server's self-signed cert
+	c := &Checker{Client: srv.Client()}
+	r := c.Check(context.Background(), srv.URL)
+	if !r.Up {
+		t.Fatalf("not up: %+v", r)
+	}
+	days, ok := r.CertDaysLeft()
+	if !ok {
+		t.Fatal("expected cert info for https url")
+	}
+	want := int(time.Until(srv.Certificate().NotAfter).Hours() / 24)
+	if days != want {
+		t.Fatalf("days left = %d, want %d", days, want)
+	}
+}
+
+func TestNoCertForPlainHTTP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+
+	r := (&Checker{}).Check(context.Background(), srv.URL)
+	if _, ok := r.CertDaysLeft(); ok {
+		t.Fatal("plain http shouldn't have cert info")
+	}
+}

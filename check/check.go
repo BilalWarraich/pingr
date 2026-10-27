@@ -18,6 +18,16 @@ type Result struct {
 	Attempts int           `json:"attempts"`
 	Err      string        `json:"error,omitempty"`
 	At       time.Time     `json:"checked_at"`
+	// only set for https urls
+	CertExpiry *time.Time `json:"cert_expires_at,omitempty"`
+}
+
+// CertDaysLeft returns whole days until the cert expires, ok=false if there's no cert info.
+func (r Result) CertDaysLeft() (days int, ok bool) {
+	if r.CertExpiry == nil {
+		return 0, false
+	}
+	return int(time.Until(*r.CertExpiry).Hours() / 24), true
 }
 
 type Checker struct {
@@ -109,8 +119,8 @@ func (c *Checker) Check(ctx context.Context, url string) Result {
 			}
 		}
 
-		status, lat, err := c.do(ctx, url)
-		r.Status, r.Latency, r.At = status, lat, time.Now()
+		status, lat, certExp, err := c.do(ctx, url)
+		r.Status, r.Latency, r.At, r.CertExpiry = status, lat, time.Now(), certExp
 		if err == nil && status < 500 {
 			r.Up = status < 400
 			r.Err = ""
@@ -139,10 +149,10 @@ func (c *Checker) Check(ctx context.Context, url string) Result {
 	return r
 }
 
-func (c *Checker) do(ctx context.Context, url string) (int, time.Duration, error) {
+func (c *Checker) do(ctx context.Context, url string) (int, time.Duration, *time.Time, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, nil, err
 	}
 	req.Header.Set("User-Agent", "pingr/0.1")
 
@@ -155,8 +165,16 @@ func (c *Checker) do(ctx context.Context, url string) (int, time.Duration, error
 	resp, err := client.Do(req)
 	lat := time.Since(start)
 	if err != nil {
-		return 0, lat, err
+		return 0, lat, nil, err
 	}
 	resp.Body.Close()
-	return resp.StatusCode, lat, nil
+
+	// PeerCertificates[0] is the leaf cert, the one for the site itself.
+	// note: after redirects this is the cert of the final url
+	var certExp *time.Time
+	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+		exp := resp.TLS.PeerCertificates[0].NotAfter
+		certExp = &exp
+	}
+	return resp.StatusCode, lat, certExp, nil
 }
