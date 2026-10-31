@@ -3,7 +3,9 @@ package check
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/BilalWarraich/pingr/ratelimit"
@@ -35,7 +37,18 @@ type Checker struct {
 	Limiter     *ratelimit.Bucket // optional
 	Concurrency int
 	Retries     int
+	// optional per-url rules, urls without one just need a status < 400
+	Rules map[string]Rule
 }
+
+type Rule struct {
+	ExpectStatus int           // 0 = anything below 400
+	BodyContains string        // "" = don't look at the body
+	Timeout      time.Duration // 0 = whatever the client has
+}
+
+// only read this much of the body when looking for BodyContains
+const maxBody = 1 << 20
 
 // CheckAll checks every url with at most c.Concurrency in flight.
 // Results come back in the same order as urls.
@@ -108,6 +121,7 @@ func (c *Checker) Stream(ctx context.Context, urls []string) <-chan Result {
 
 func (c *Checker) Check(ctx context.Context, url string) Result {
 	r := Result{URL: url}
+	rule := c.Rules[url]
 	backoff := 200 * time.Millisecond
 
 	for attempt := 0; attempt <= c.Retries; attempt++ {
@@ -119,21 +133,18 @@ func (c *Checker) Check(ctx context.Context, url string) Result {
 			}
 		}
 
-		status, lat, certExp, err := c.do(ctx, url)
-		r.Status, r.Latency, r.At, r.CertExpiry = status, lat, time.Now(), certExp
-		if err == nil && status < 500 {
-			r.Up = status < 400
-			r.Err = ""
-			if !r.Up {
-				r.Err = fmt.Sprintf("got %d", status)
-			}
-			// 4xx won't get better by retrying
+		res, err := c.do(ctx, url, rule)
+		r.Status, r.Latency, r.At, r.CertExpiry = res.status, res.latency, time.Now(), res.certExpiry
+		// network errors and unexpected 5xx are worth retrying, anything else isn't
+		retryable := err != nil || (res.status >= 500 && res.status != rule.ExpectStatus)
+		if !retryable {
+			r.Up, r.Err = evaluate(rule, res)
 			return r
 		}
 		if err != nil {
 			r.Err = err.Error()
 		} else {
-			r.Err = fmt.Sprintf("got %d", status)
+			r.Err = fmt.Sprintf("got %d", res.status)
 		}
 
 		if attempt < c.Retries {
@@ -149,10 +160,36 @@ func (c *Checker) Check(ctx context.Context, url string) Result {
 	return r
 }
 
-func (c *Checker) do(ctx context.Context, url string) (int, time.Duration, *time.Time, error) {
+func evaluate(rule Rule, res response) (up bool, errMsg string) {
+	if rule.ExpectStatus != 0 {
+		if res.status != rule.ExpectStatus {
+			return false, fmt.Sprintf("got %d, expected %d", res.status, rule.ExpectStatus)
+		}
+	} else if res.status >= 400 {
+		return false, fmt.Sprintf("got %d", res.status)
+	}
+	if rule.BodyContains != "" && !strings.Contains(res.body, rule.BodyContains) {
+		return false, fmt.Sprintf("body doesn't contain %q", rule.BodyContains)
+	}
+	return true, ""
+}
+
+type response struct {
+	status     int
+	latency    time.Duration
+	certExpiry *time.Time
+	body       string // only filled in when the rule needs it
+}
+
+func (c *Checker) do(ctx context.Context, url string, rule Rule) (response, error) {
+	if rule.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, rule.Timeout)
+		defer cancel()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, 0, nil, err
+		return response{}, err
 	}
 	req.Header.Set("User-Agent", "pingr/0.1")
 
@@ -163,18 +200,26 @@ func (c *Checker) do(ctx context.Context, url string) (int, time.Duration, *time
 
 	start := time.Now()
 	resp, err := client.Do(req)
-	lat := time.Since(start)
+	res := response{latency: time.Since(start)}
 	if err != nil {
-		return 0, lat, nil, err
+		return res, err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	res.status = resp.StatusCode
+
+	if rule.BodyContains != "" {
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+		if err != nil {
+			return res, fmt.Errorf("reading body: %w", err)
+		}
+		res.body = string(b)
+	}
 
 	// PeerCertificates[0] is the leaf cert, the one for the site itself.
 	// note: after redirects this is the cert of the final url
-	var certExp *time.Time
 	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
 		exp := resp.TLS.PeerCertificates[0].NotAfter
-		certExp = &exp
+		res.certExpiry = &exp
 	}
-	return resp.StatusCode, lat, certExp, nil
+	return res, nil
 }

@@ -2,8 +2,10 @@ package check
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -119,5 +121,52 @@ func TestNoCertForPlainHTTP(t *testing.T) {
 	r := (&Checker{}).Check(context.Background(), srv.URL)
 	if _, ok := r.CertDaysLeft(); ok {
 		t.Fatal("plain http shouldn't have cert info")
+	}
+}
+
+func TestRules(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			fmt.Fprint(w, `{"status":"ok"}`)
+		case "/maintenance":
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case "/broken":
+			fmt.Fprint(w, `{"status":"degraded"}`)
+		case "/slow":
+			time.Sleep(200 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+
+	cases := []struct {
+		name    string
+		path    string
+		rule    Rule
+		wantUp  bool
+		wantErr string
+	}{
+		{"no rule", "/health", Rule{}, true, ""},
+		{"body matches", "/health", Rule{BodyContains: `"ok"`}, true, ""},
+		{"body doesn't match", "/broken", Rule{BodyContains: `"ok"`}, false, "body doesn't contain"},
+		{"expected 503 is up", "/maintenance", Rule{ExpectStatus: 503}, true, ""},
+		{"wrong status", "/health", Rule{ExpectStatus: 201}, false, "expected 201"},
+		{"timeout", "/slow", Rule{Timeout: 50 * time.Millisecond}, false, "deadline exceeded"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			url := srv.URL + tc.path
+			c := &Checker{Rules: map[string]Rule{url: tc.rule}}
+			r := c.Check(context.Background(), url)
+			if r.Up != tc.wantUp {
+				t.Fatalf("up=%v want %v (%+v)", r.Up, tc.wantUp, r)
+			}
+			if tc.wantErr != "" && !strings.Contains(r.Err, tc.wantErr) {
+				t.Fatalf("err %q should contain %q", r.Err, tc.wantErr)
+			}
+			if r.Attempts != 1 {
+				t.Fatalf("shouldn't retry here, attempts=%d", r.Attempts)
+			}
+		})
 	}
 }

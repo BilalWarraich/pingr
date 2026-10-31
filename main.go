@@ -23,6 +23,7 @@ import (
 func main() {
 	var (
 		file        = flag.String("f", "urls.txt", "file with one url per line")
+		configFile  = flag.String("config", "", "yaml config with per-url rules (instead of -f)")
 		concurrency = flag.Int("c", 10, "max concurrent requests")
 		rps         = flag.Float64("rps", 20, "max requests per second (0 = no limit)")
 		timeout     = flag.Duration("timeout", 5*time.Second, "per request timeout")
@@ -34,18 +35,28 @@ func main() {
 	)
 	flag.Parse()
 
-	urls, err := readURLs(*file)
+	var (
+		urls  []string
+		rules map[string]check.Rule
+		err   error
+	)
+	if *configFile != "" {
+		urls, rules, err = loadConfig(*configFile)
+	} else {
+		urls, err = readURLs(*file)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
 	if len(urls) == 0 {
-		log.Fatalf("no urls in %s", *file)
+		log.Fatal("no urls to check")
 	}
 
 	c := &check.Checker{
 		Client:      &http.Client{Timeout: *timeout},
 		Concurrency: *concurrency,
 		Retries:     *retries,
+		Rules:       rules,
 	}
 	if *rps > 0 {
 		c.Limiter = ratelimit.New(*rps, int(*rps))

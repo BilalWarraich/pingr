@@ -37,6 +37,7 @@ Flags:
 
 ```
 -f         file with urls (default urls.txt)
+-config    yaml config with per-url rules, instead of -f
 -c         max concurrent requests (10)
 -rps       max requests per second, 0 = unlimited (20)
 -timeout   per request timeout (5s)
@@ -46,6 +47,25 @@ Flags:
 -interval  check interval in serve mode (30s)
 -cert-warn warn and exit 1 if a tls cert expires within N days (14)
 ```
+
+### Config file
+
+For more than "is it up", use a yaml config instead of a url list (see `pingr.example.yaml`):
+
+```yaml
+urls:
+  - url: https://api.example.com/health
+    expected_status: 200
+    body_contains: '"status":"ok"'
+    timeout: 2s
+```
+
+```
+./pingr -config pingr.yaml
+```
+
+Unknown keys are an error, so a typo like `expect_status` doesn't get silently ignored.
+An `expected_status` of 5xx counts as up and isn't retried.
 
 ### Serve mode
 
@@ -84,4 +104,6 @@ go test -race ./...
 
 ## Ideas / todo
 
-- per-url config (expected status, body contains, custom interval)
+- only alert after N failures in a row (or a cooldown), so a flapping site doesn't spam slack
+- per-url check interval in the config file
+

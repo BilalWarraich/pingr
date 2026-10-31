@@ -1,0 +1,13 @@
+# pingr -config pingr.example.yaml
+urls:
+  - url: https://go.dev
+
+  # a health endpoint that has to actually say it's healthy
+  - url: https://api.example.com/health
+    expected_status: 200
+    body_contains: '"status":"ok"'
+    timeout: 2s
+
+  # a maintenance page that should be returning 503 right now
+  - url: https://old.example.com
+    expected_status: 503
